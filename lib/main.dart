@@ -1,113 +1,119 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+
+import 'core/navigation/navigation_manager.dart';
+import 'core/navigation/path_stack.dart';
+import 'core/navigation/route_path.dart';
+import 'screens/home/presentation/page/HomePage.dart';
 
 void main() {
   runApp(MyApp());
 }
 
 class MyApp extends StatelessWidget {
-  // This widget is the root of your application.
+  final AppRouteInformationParser _routeInformationParser =
+      AppRouteInformationParser();
+  final AppRouterDelegate _routerDelegate = AppRouterDelegate();
+
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'Flutter Demo',
-      theme: ThemeData(
-        // This is the theme of your application.
-        //
-        // Try running your application with "flutter run". You'll see the
-        // application has a blue toolbar. Then, without quitting the app, try
-        // changing the primarySwatch below to Colors.green and then invoke
-        // "hot reload" (press "r" in the console where you ran "flutter run",
-        // or simply save your changes to "hot reload" in a Flutter IDE).
-        // Notice that the counter didn't reset back to zero; the application
-        // is not restarted.
-        primarySwatch: Colors.blue,
-      ),
-      home: MyHomePage(title: 'Flutter Demo Home Page'),
-    );
+    return MaterialApp.router(
+        key: ValueKey('main_router'),
+        routeInformationParser: _routeInformationParser,
+        routerDelegate: _routerDelegate);
   }
 }
 
-class MyHomePage extends StatefulWidget {
-  MyHomePage({Key key, this.title}) : super(key: key);
-
-  // This widget is the home page of your application. It is stateful, meaning
-  // that it has a State object (defined below) that contains fields that affect
-  // how it looks.
-
-  // This class is the configuration for the state. It holds the values (in this
-  // case the title) provided by the parent (in this case the App widget) and
-  // used by the build method of the State. Fields in a Widget subclass are
-  // always marked "final".
-
-  final String title;
-
+class AppRouterDelegate extends RouterDelegate<RoutePath>
+    with ChangeNotifier, PopNavigatorRouterDelegateMixin<RoutePath> {
   @override
-  _MyHomePageState createState() => _MyHomePageState();
-}
+  final navigatorKey = GlobalKey<NavigatorState>();
 
-class _MyHomePageState extends State<MyHomePage> {
-  int _counter = 0;
+  NavigationManagerDelegate _navigationManagerDelegate =
+      NavigationManagerDelegate();
 
-  void _incrementCounter() {
-    setState(() {
-      // This call to setState tells the Flutter framework that something has
-      // changed in this State, which causes it to rerun the build method below
-      // so that the display can reflect the updated values. If we changed
-      // _counter without calling setState(), then the build method would not be
-      // called again, and so nothing would appear to happen.
-      _counter++;
-    });
+  // This router uses a Stack to push/pop/reset. All paths are stored in this stack
+  // and it notifies out when any changes are made.
+  final PathStack stack = PathStack(root: RoutePath.home());
+
+  AppRouterDelegate({Key key}) : super() {
+    // inline handlers for navigation to allow to receive intents from users
+    // who interact with the Navigation Manager of this class
+    _navigationManagerDelegate.onPush = (RoutePath path) {
+      stack.push(path);
+    };
+
+    _navigationManagerDelegate.onPop = () {
+      stack.pop();
+    };
+
+    _navigationManagerDelegate.onReset = () {
+      stack.reset();
+    };
+
+    // connect the notifier of the PathStack to the router notifier to trigger
+    // a re-draw of this router with all the paths
+    stack.addListener(notifyListeners);
   }
 
   @override
   Widget build(BuildContext context) {
-    // This method is rerun every time setState is called, for instance as done
-    // by the _incrementCounter method above.
-    //
-    // The Flutter framework has been optimized to make rerunning build methods
-    // fast, so that you can just rebuild anything that needs updating rather
-    // than having to individually change instances of widgets.
-    return Scaffold(
-      appBar: AppBar(
-        // Here we take the value from the MyHomePage object that was created by
-        // the App.build method, and use it to set our appbar title.
-        title: Text(widget.title),
-      ),
-      body: Center(
-        // Center is a layout widget. It takes a single child and positions it
-        // in the middle of the parent.
-        child: Column(
-          // Column is also a layout widget. It takes a list of children and
-          // arranges them vertically. By default, it sizes itself to fit its
-          // children horizontally, and tries to be as tall as its parent.
-          //
-          // Invoke "debug painting" (press "p" in the console, choose the
-          // "Toggle Debug Paint" action from the Flutter Inspector in Android
-          // Studio, or the "Toggle Debug Paint" command in Visual Studio Code)
-          // to see the wireframe for each widget.
-          //
-          // Column has various properties to control how it sizes itself and
-          // how it positions its children. Here we use mainAxisAlignment to
-          // center the children vertically; the main axis here is the vertical
-          // axis because Columns are vertical (the cross axis would be
-          // horizontal).
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: <Widget>[
-            Text(
-              'You have pushed the button this many times:',
-            ),
-            Text(
-              '$_counter',
-              style: Theme.of(context).textTheme.headline4,
-            ),
-          ],
-        ),
-      ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: _incrementCounter,
-        tooltip: 'Increment',
-        child: Icon(Icons.add),
-      ), // This trailing comma makes auto-formatting nicer for build methods.
-    );
+    return Provider(
+        create: (_) => NavigationManager(delegate: _navigationManagerDelegate),
+        child: Navigator(
+          key: navigatorKey,
+          pages: stack.items.asMap().entries.map((e) {
+            int index = e.key;
+            RoutePath configuration = e.value;
+            // iterate through each of the pages in our stack and construct them
+            // providing the same key should prevent a new item from being created
+            // so let's use the index which will be unique
+            ValueKey key = ValueKey(index);
+            if (configuration.isHome)
+              return MaterialPage(key: key, child: HomePage());
+          }).toList(),
+          onPopPage: (route, result) {
+            // let the OS handle the back press if there was nothing to pop
+            if (!route.didPop(result)) {
+              return false;
+            }
+
+            // if we are on the route of the application, the lander, we probably want to just exit
+            // returning false means we want the OS to handle the back press
+            if (stack.items.length == 1) {
+              return false;
+            }
+
+            // remove from the stack and consume the back event so the
+            // OS doesn't exit
+            stack.pop();
+            return true;
+          },
+        ));
+  }
+
+  @override
+  Future<void> setNewRoutePath(RoutePath configuration) {
+    // we receive the RoutePath we created in AppRouteInformationParser::parseRouteInformation
+    // This allows us to push it on the stack or manipulate the stack to what we want it to be.
+    // any time we enter this code path, we probably want to rebuild the stack to control the flow
+    // of the application. THis means we won't end up with a bunch of nested screens where the history
+    // doesn't make sense.
+    stack.push(configuration);
+  }
+}
+
+class AppRouteInformationParser extends RouteInformationParser<RoutePath> {
+  @override
+  Future<RoutePath> parseRouteInformation(
+      RouteInformation routeInformation) async {
+    final uri = Uri.parse(routeInformation.location);
+
+    // parsing this information will have us return something that will then be handled
+    // by setNewRoutePath, so we would use this data to set stateful information
+    // which is then notified to the routerdelegate, which redraws it's pages based on that information.
+
+    // for this simple example, always assume the app launches to the lander
+    return RoutePath.home();
   }
 }
