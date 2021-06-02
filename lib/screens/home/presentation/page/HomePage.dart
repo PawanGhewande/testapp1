@@ -1,5 +1,3 @@
-import 'dart:js';
-
 import 'package:flutter/material.dart';
 import 'package:testapp1/screens/home/data/local/Database.dart';
 import 'package:testapp1/screens/home/domain/Person.dart';
@@ -20,6 +18,7 @@ class HomePage extends StatelessWidget {
         child: Column(
           children: [
             Expanded(
+              flex: 7,
               child: Padding(
                 padding:
                     const EdgeInsets.symmetric(horizontal: 15, vertical: 5),
@@ -85,9 +84,10 @@ class HomePage extends StatelessWidget {
               ),
             ),
             Expanded(
+              flex: 5,
               child: FutureBuilder(
                 future: LocalStorage.db.getAllPersons(),
-                builder: (context, snapshot) {
+                builder: (context, AsyncSnapshot<List<Person>> snapshot) {
                   if (snapshot.hasError) {
                     return Center(
                       child: Text('Something went Wrong..'),
@@ -95,10 +95,7 @@ class HomePage extends StatelessWidget {
                   }
                   if (snapshot.connectionState == ConnectionState.done) {
                     print(snapshot.data);
-
-                    // I'm getting error to typecast the object to List<Person>
-                    List<Person> data = snapshot.data;
-                    return dataList(data);
+                    return dataList(snapshot.data);
                   }
                   return Center(
                     child: CircularProgressIndicator(),
